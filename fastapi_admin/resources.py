@@ -336,26 +336,52 @@ async def render_values(
     :params model:
     :return:
     """
-    ret = []
-    cell_attributes: List[List[dict]] = []
-    row_attributes: List[dict] = []
-    column_attributes: List[dict] = []
+    column_attributes = await get_column_attributes(request, model, fields)
+    row_attributes, cell_attributes, ret = await get_row_and_cell_attributes(request, model, fields, values, display)
+    return ret, row_attributes, column_attributes, cell_attributes
+
+async def get_column_attributes(request: Request, model: "Model", fields: List["Field"]) -> List[dict]:
+    column_attributes = []
     for field in fields:
         column_attributes.append(await model.column_attributes(request, field))
+    return column_attributes
+
+async def get_row_and_cell_attributes(
+    request: Request,
+    model: "Model",
+    fields: List["Field"],
+    values: List[Dict[str, Any]],
+    display: bool
+) -> Tuple[List[dict], List[List[dict]], List[List[Any]]]:
+    row_attributes = []
+    cell_attributes = []
+    ret = []
     for value in values:
         row_attributes.append(await model.row_attributes(request, value))
-        item = []
-        cell_item = []
-        for field in fields:
-            if isinstance(field, ComputeField):
-                v = await field.get_value(request, value)
-            else:
-                v = value.get(field.name)
-            cell_item.append(await model.cell_attributes(request, value, field))
-            if display:
-                item.append(await field.display.render(request, v))
-            else:
-                item.append(await field.input.render(request, v))
+        item, cell_item = await get_item_and_cell_item(request, model, fields, value, display)
         ret.append(item)
         cell_attributes.append(cell_item)
-    return ret, row_attributes, column_attributes, cell_attributes
+    return row_attributes, cell_attributes, ret
+
+async def get_item_and_cell_item(
+    request: Request,
+    model: "Model",
+    fields: List["Field"],
+    value: Dict[str, Any],
+    display: bool
+) -> Tuple[List[Any], List[dict]]:
+    item = []
+    cell_item = []
+    for field in fields:
+        v = await get_field_value(request, field, value)
+        cell_item.append(await model.cell_attributes(request, value, field))
+        if display:
+            item.append(await field.display.render(request, v))
+        else:
+            item.append(await field.input.render(request, v))
+    return item, cell_item
+
+async def get_field_value(request: Request, field: "Field", value: Dict[str, Any]) -> Any:
+    if isinstance(field, ComputeField):
+        return await field.get_value(request, value)
+    return value.get(field.name)
