@@ -264,26 +264,35 @@ class Model(Resource):
 
     @classmethod
     def get_fields(cls, is_display: bool = True):
-        ret = []
-        pk_column = cls.model._meta.db_pk_column
-        for field in cls.fields or cls.model._meta.fields:
+        def should_skip_field(field, is_display):
             if isinstance(field, str):
-                if field == pk_column:
-                    continue
-                field = cls._get_display_input_field(field)
+                return field == pk_column
             if isinstance(field, ComputeField) and not is_display:
-                continue
-            elif isinstance(field, Field):
+                return True
+            if isinstance(field, Field):
                 if field.name == pk_column:
-                    continue
+                    return True
                 if (is_display and isinstance(field.display, displays.InputOnly)) or (
                     not is_display and isinstance(field.input, inputs.DisplayOnly)
                 ):
-                    continue
+                    return True
             if (
                 field.name in cls.model._meta.fetch_fields
                 and field.name not in cls.model._meta.fk_fields | cls.model._meta.m2m_fields
             ):
+                return True
+            return False
+
+        def process_field(field):
+            if isinstance(field, str):
+                return cls._get_display_input_field(field)
+            return field
+
+        ret = []
+        pk_column = cls.model._meta.db_pk_column
+        for field in cls.fields or cls.model._meta.fields:
+            field = process_field(field)
+            if should_skip_field(field, is_display):
                 continue
             ret.append(field)
         ret.insert(0, cls._get_display_input_field(pk_column))
